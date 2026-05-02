@@ -16,10 +16,17 @@ bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
 # 3. Initialize OpenAI Client (Pointed at Hugging Face Router)
-client = OpenAI(
-    base_url="https://router.huggingface.co/v1",
-    api_key=HF_TOKEN,
-)
+# Defer initialization to avoid import-time errors
+client = None
+
+def get_client():
+    global client
+    if client is None:
+        client = OpenAI(
+            base_url="https://router.huggingface.co/v1",
+            api_key=HF_TOKEN,
+        )
+    return client
 
 # 4. Handle /start and /help commands
 @bot.message_handler(commands=['start', 'help'])
@@ -34,7 +41,7 @@ def handle_message(message):
         bot.send_chat_action(message.chat.id, 'typing')
         
         # Call the Hugging Face API
-        response = client.chat.completions.create(
+        response = get_client().chat.completions.create(
             model="deepseek-ai/DeepSeek-V4-Pro:novita",
             messages=[
                 {
@@ -69,19 +76,22 @@ def index():
 
 # 8. Webhook Setup on Startup
 # Render automatically provides 'RENDER_EXTERNAL_URL' (e.g., https://your-app.onrender.com)
-render_url = os.environ.get("RENDER_EXTERNAL_URL")
-
-bot.remove_webhook()
-time.sleep(0.5) # Slight delay to ensure previous webhooks are dropped
-
-if render_url:
-    # Tell Telegram to send messages to your Render URL securely
-    bot.set_webhook(url=f"{render_url}/{BOT_TOKEN}")
-    print(f"Webhook set to: {render_url}")
-else:
-    print("RENDER_EXTERNAL_URL not found. (If running locally, webhooks won't work).")
+# Only set webhook when running directly, not when imported by gunicorn
+def setup_webhook():
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if render_url:
+        try:
+            bot.remove_webhook()
+            time.sleep(0.5)
+            bot.set_webhook(url=f"{render_url}/{BOT_TOKEN}")
+            print(f"Webhook set to: {render_url}")
+        except Exception as e:
+            print(f"Failed to set webhook: {e}")
+    else:
+        print("RENDER_EXTERNAL_URL not found. (If running locally, webhooks won't work).")
 
 # 9. Start the Flask app (Fallback for local testing)
 if __name__ == "__main__":
+    setup_webhook()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
