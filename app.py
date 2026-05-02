@@ -31,6 +31,7 @@ def get_client():
 # 4. Handle /start and /help commands
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
+    print(f"[DEBUG] /start command from {message.chat.id}")
     bot.reply_to(message, "Hello! I am an AI chatbot powered by DeepSeek. Send me a message and I'll reply!")
 
 # 5. Handle all other text messages
@@ -41,26 +42,32 @@ def handle_message(message):
         # Show "typing..." status in Telegram while waiting for the API
         bot.send_chat_action(message.chat.id, 'typing')
         
-        # Call the Hugging Face API
-        print(f"[DEBUG] Calling OpenAI API...")
-        response = get_client().chat.completions.create(
-            model="deepseek-ai/DeepSeek-V4-Pro:novita",
-            messages=[
-                {
-                    "role": "user",
-                    "content": message.text,
-                }
-            ]
-        )
-        
-        # Get the AI's reply and send it back to the user
-        reply = response.choices[0].message.content
-        print(f"[DEBUG] Got reply: {reply[:100]}...")
-        bot.reply_to(message, reply)
+        # Call the Hugging Face API with timeout
+        print(f"[DEBUG] Calling OpenAI API with model: deepseek-ai/DeepSeek-V4-Pro:novita")
+        try:
+            response = get_client().chat.completions.create(
+                model="deepseek-ai/DeepSeek-V4-Pro:novita",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": message.text,
+                    }
+                ],
+                timeout=30
+            )
+            
+            # Get the AI's reply and send it back to the user
+            reply = response.choices[0].message.content
+            print(f"[DEBUG] Got reply: {reply[:100]}...")
+            bot.reply_to(message, reply)
+        except Exception as api_error:
+            print(f"[ERROR] API Error: {str(api_error)}")
+            error_msg = f"API Error: {str(api_error)[:100]}"
+            bot.reply_to(message, error_msg)
         
     except Exception as e:
-        print(f"[ERROR] {str(e)}")
-        bot.reply_to(message, f"Sorry, I encountered an error: {str(e)}")
+        print(f"[ERROR] Handler Error: {str(e)}")
+        bot.reply_to(message, f"Error: {str(e)[:100]}")
 
 # 6. Flask Route to receive Webhooks from Telegram
 @app.route('/' + BOT_TOKEN, methods=['POST'])
